@@ -2,9 +2,11 @@ import React, { useState, useRef, useEffect } from 'react';
 import { StyleSheet, Text, View, TouchableWithoutFeedback, Button, Alert, TouchableOpacity} from 'react-native';
 import { Audio } from 'expo-av';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { useKeepAwake } from 'expo-keep-awake';
+
 
 export default function App() {
-
+  const [sessionData, setSessionData] = useState([])
   const [retentionDurations, setRetentionDurations] = useState([]);
 const [finished, setFinished] = useState(false);
   const [isRunning, setIsRunning] = useState(false);
@@ -16,6 +18,7 @@ const [finished, setFinished] = useState(false);
   const retentionSound = useRef(new Audio.Sound());
   const doubleTapRef = useRef(null);
   const [breathingSpeed, setBreathingSpeed] = useState(1.0)
+  
   const currentPhaseRef = useRef(currentPhase);
 useEffect(() => {
   currentPhaseRef.current = currentPhase;
@@ -43,11 +46,16 @@ useEffect(() => {
   }, []);
 
 
+
   const handleSaveResults = async () => {
+    if (retentionDurations.length === 0) {
+      Alert.alert('Fehler', 'Keine Daten zum Speichern vorhanden.');
+      return;
+    }
+    
     const timestamp = new Date().toISOString();
     const totalTime = retentionDurations.reduce((sum, t) => sum + t, 0);
-    const averageTime =
-      retentionDurations.length > 0 ? totalTime / retentionDurations.length : 0;
+    const averageTime = totalTime / retentionDurations.length;
     
     const resultData = {
       timestamp,
@@ -56,11 +64,45 @@ useEffect(() => {
     };
   
     try {
-      await AsyncStorage.setItem('breathingExerciseResults', JSON.stringify(resultData));
+      // Bestehende Daten abrufen
+      const existingDataJson = await AsyncStorage.getItem('breathingExerciseResults');
+      let allResults = [];
+      
+      if (existingDataJson) {
+        try {
+          // Versuchen, die existierenden Daten zu parsen
+          allResults = JSON.parse(existingDataJson);
+          
+          // Sicherstellen, dass es ein Array ist
+          if (!Array.isArray(allResults)) {
+            allResults = [allResults]; // Falls es nur ein Objekt war
+          }
+        } catch (parseError) {
+          console.error("Fehler beim Parsen der gespeicherten Daten:", parseError);
+          allResults = []; // Zurücksetzen bei Parsefehler
+        }
+      }
+      
+      // Neue Ergebnisse hinzufügen
+      allResults.push(resultData);
+      
+      // Alle Ergebnisse speichern
+      await AsyncStorage.setItem('breathingExerciseResults', JSON.stringify(allResults));
       Alert.alert('Erfolg', 'Ergebnisse wurden gespeichert.');
+      
+      // App zurücksetzen für neue Übung
+      resetApp();
     } catch (error) {
+      console.error("Speicherfehler:", error);
       Alert.alert('Fehler', 'Ergebnisse konnten nicht gespeichert werden.');
     }
+  };
+
+  // Funktion zum Zurücksetzen der App nach dem Speichern
+  const resetApp = () => {
+    setRetentionDurations([]);
+    setFinished(false);
+    setCurrentPhase('idle');
   };
 
   // Starte die Runde
@@ -147,6 +189,13 @@ useEffect(() => {
         console.log("Error beim Stoppen der breathingAudio:", error);
       }
     }
+    else if (currentPhase === 'pause') {
+      // Falls wir in der Pause sind und noch keine Runde erfasst wurde,
+      // aber der retentionTimer einen Wert > 0 hat, dann erfassen wir diesen Wert.
+      if (retentionDurations.length === 0 && retentionTimer > 0) {
+        setRetentionDurations([retentionTimer]);
+      }
+    }
     if (pauseTimeoutRef.current) {
       clearTimeout(pauseTimeoutRef.current);
       pauseTimeoutRef.current = null;
@@ -172,9 +221,50 @@ useEffect(() => {
     return `${mins < 10 ? '0' : ''}${mins}:${secs < 10 ? '0' : ''}${secs}`;
   };
 
+  const chartData = {
+    labels: sessionData.map(session => new Date(session.timestamp).toLocaleDateString()),
+    datasets: [
+      {
+        data: sessionData.map(session => session.averageRetention)
+      }
+    ]
+  };
+
+  useKeepAwake();
+
   return (
     <TouchableWithoutFeedback onPress={handleTap}>
       <View style={styles.container}>
+      {currentPhase === 'idle' && !finished && (
+          <View style={styles.chartContainer}>
+            {sessionData.length > 0 ? (
+              <BarChart
+                data={chartData}
+                width={Dimensions.get('window').width - 30}
+                height={220}
+                yAxisLabel=""
+                chartConfig={{
+                  backgroundColor: "#fff",
+                  backgroundGradientFrom: "#fff",
+                  backgroundGradientTo: "#fff",
+                  decimalPlaces: 1,
+                  color: (opacity = 1) => `rgba(0, 122, 255, ${opacity})`,
+                  style: {
+                    borderRadius: 16
+                  }
+                }}
+                style={{
+                  marginVertical: 8,
+                  borderRadius: 16
+                }}
+              />
+            ) : (
+              <Text style={styles.noDataText}>Keine Sessions verfügbar</Text>
+            )}
+          </View>
+        )}
+
+
         {currentPhase === 'idle' && !finished &&(
         <View style={styles.idleContainer}>
         <Text style={styles.label}>BreathingSpeed:</Text>
