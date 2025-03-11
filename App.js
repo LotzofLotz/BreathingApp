@@ -1,14 +1,15 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { StyleSheet, Text, View, TouchableWithoutFeedback, Button, Alert, TouchableOpacity} from 'react-native';
+import { StyleSheet, Text, View, TouchableWithoutFeedback, Button, Alert, TouchableOpacity, Dimensions} from 'react-native';
 import { Audio } from 'expo-av';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useKeepAwake } from 'expo-keep-awake';
+import { BarChart } from 'react-native-chart-kit';
 
 
 export default function App() {
   const [sessionData, setSessionData] = useState([])
   const [retentionDurations, setRetentionDurations] = useState([]);
-const [finished, setFinished] = useState(false);
+  const [finished, setFinished] = useState(false);
   const [isRunning, setIsRunning] = useState(false);
   const [currentPhase, setCurrentPhase] = useState('idle'); // idle, breathing, retention, pause
   const [retentionTimer, setRetentionTimer] = useState(0);
@@ -20,9 +21,27 @@ const [finished, setFinished] = useState(false);
   const [breathingSpeed, setBreathingSpeed] = useState(1.0)
   
   const currentPhaseRef = useRef(currentPhase);
-useEffect(() => {
-  currentPhaseRef.current = currentPhase;
-}, [currentPhase]);
+  useEffect(() => {
+    currentPhaseRef.current = currentPhase;
+  }, [currentPhase]);
+
+  const loadSessionData = async () => {
+    try {
+      const storedData = await AsyncStorage.getItem('breathingExerciseResults');
+      if (storedData !== null) {
+        const parsedData = JSON.parse(storedData);
+        setSessionData(Array.isArray(parsedData) ? parsedData : [parsedData]);
+      }
+    } catch (error) {
+      console.error("Fehler beim Laden der Session-Daten:", error);
+      Alert.alert("Fehler", "Daten konnten nicht geladen werden.");
+    }
+  };
+  
+  // 2. Füge diesen useEffect hinzu, um die Daten beim App-Start zu laden
+  useEffect(() => {
+    loadSessionData();
+  }, []);
 
 
   // Audiodateien laden
@@ -45,8 +64,7 @@ useEffect(() => {
     };
   }, []);
 
-
-
+ 
   const handleSaveResults = async () => {
     if (retentionDurations.length === 0) {
       Alert.alert('Fehler', 'Keine Daten zum Speichern vorhanden.');
@@ -88,6 +106,10 @@ useEffect(() => {
       
       // Alle Ergebnisse speichern
       await AsyncStorage.setItem('breathingExerciseResults', JSON.stringify(allResults));
+      
+      // ##### NEUE ZEILE: Lade die aktualisierten Daten für den Chart #####
+      await loadSessionData();
+      
       Alert.alert('Erfolg', 'Ergebnisse wurden gespeichert.');
       
       // App zurücksetzen für neue Übung
@@ -221,11 +243,21 @@ useEffect(() => {
     return `${mins < 10 ? '0' : ''}${mins}:${secs < 10 ? '0' : ''}${secs}`;
   };
 
+  // Format time for chart display
+  const formatChartTime = seconds => {
+    const mins = Math.floor(seconds / 60);
+    const secs = Math.floor(seconds % 60);
+    return `${mins}:${secs < 10 ? '0' : ''}${secs}`;
+  };
+
+  
+
+  // Chart-Daten mit absoluten Werten
   const chartData = {
     labels: sessionData.map(session => new Date(session.timestamp).toLocaleDateString()),
     datasets: [
       {
-        data: sessionData.map(session => session.averageRetention)
+        data: sessionData.map(session => session.averageRetention / 60) // Konvertieren zu Minuten
       }
     ]
   };
@@ -237,30 +269,46 @@ useEffect(() => {
       <View style={styles.container}>
       {currentPhase === 'idle' && !finished && (
           <View style={styles.chartContainer}>
+            <Text style={styles.chartTitle}>Durchschnittliche Retentionszeit</Text>
             {sessionData.length > 0 ? (
-              <BarChart
-                data={chartData}
-                width={Dimensions.get('window').width - 30}
-                height={220}
-                yAxisLabel=""
-                chartConfig={{
-                  backgroundColor: "#fff",
-                  backgroundGradientFrom: "#fff",
-                  backgroundGradientTo: "#fff",
-                  decimalPlaces: 1,
-                  color: (opacity = 1) => `rgba(0, 122, 255, ${opacity})`,
-                  style: {
-                    borderRadius: 16
-                  }
-                }}
-                style={{
-                  marginVertical: 8,
-                  borderRadius: 16
-                }}
-              />
-            ) : (
-              <Text style={styles.noDataText}>Keine Sessions verfügbar</Text>
-            )}
+  <BarChart
+    data={chartData}
+    width={Dimensions.get('window').width - 30}
+    height={220}
+    yAxisLabel=""
+    yAxisSuffix=" s"
+    fromZero={true}         // Y-Achse beginnt immer bei 0
+    withInnerLines={true}   // Horizontale Linien anzeigen für bessere Lesbarkeit
+    segments={5}            // Anzahl der horizontalen Abschnitte
+    chartConfig={{
+      backgroundColor: "#f5f5f5",
+      backgroundGradientFrom: "#f5f5f5",
+      backgroundGradientTo: "#f5f5f5",
+      decimalPlaces: 0,     // Keine Dezimalstellen
+      color: (opacity = 1) => `rgba(0, 122, 255, ${opacity})`,
+      labelColor: (opacity = 1) => `rgba(0, 0, 0, ${opacity})`,
+      fillShadowGradient: '#007AFF',
+      fillShadowGradientOpacity: 0.8,
+      barPercentage: 0.7,
+      propsForVerticalLabels: {
+        fontSize: 10,
+        rotation: 0
+      },
+      propsForHorizontalLabels: {
+        fontSize: 10
+      },
+      // Keine formatYLabel-Funktion, damit die Standardbeschriftung verwendet wird
+    }}
+    style={{
+      marginVertical: 8,
+      borderRadius: 16,
+      padding: 10
+      // Schatten-Eigenschaften wurden entfernt
+    }}
+  />
+) : (
+  <Text style={styles.noDataText}>Keine Sessions verfügbar</Text>
+)}
           </View>
         )}
 
@@ -276,7 +324,7 @@ useEffect(() => {
             ]}
             onPress={() => setBreathingSpeed(1.0)}
           >
-            <Text style={styles.optionText}>Normal</Text>
+            <Text style={[styles.optionText, breathingSpeed === 1.0 && styles.optionTextSelected]}>Normal</Text>
           </TouchableOpacity>
           <TouchableOpacity
             style={[
@@ -285,7 +333,7 @@ useEffect(() => {
             ]}
             onPress={() => setBreathingSpeed(1.2)}
           >
-            <Text style={styles.optionText}>Quick</Text>
+            <Text style={[styles.optionText, breathingSpeed === 1.2 && styles.optionTextSelected]}>Quick</Text>
           </TouchableOpacity>
         </View>
         <TouchableOpacity style={styles.startButton} onPress={startRound}>
@@ -337,6 +385,35 @@ const styles = StyleSheet.create({
     backgroundColor: '#fff',
     alignItems: 'center',
     justifyContent: 'center',
+    paddingHorizontal: 15,
+  },
+  chartContainer: {
+    width: '100%',
+    alignItems: 'center',
+    marginBottom: 20,
+    backgroundColor: '#fff',
+    // borderRadius: 12,
+    // padding: 10,
+    // shadowColor: "#000",
+    // shadowOffset: {
+    //   width: 0,
+    //   height: 2,
+    // },
+    // shadowOpacity: 0.1,
+    // shadowRadius: 3.84,
+    // elevation: 3,
+  },
+  chartTitle: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    marginBottom: 10,
+    color: '#333',
+  },
+  noDataText: {
+    fontSize: 16,
+    color: '#999',
+    fontStyle: 'italic',
+    padding: 20,
   },
   phaseContainer: {
     alignItems: 'center',
@@ -347,16 +424,22 @@ const styles = StyleSheet.create({
     margin: 20,
   },
   timerText: {
-    fontSize: 24,
+    fontSize: 42,
     fontWeight: 'bold',
+    color: '#007AFF',
   },
   resultsContainer: {
     marginTop: 30,
     alignItems: 'center',
+    backgroundColor: '#f8f9fa',
+    borderRadius: 10,
+    padding: 20,
+    width: '90%',
   },
   resultText: {
     fontSize: 18,
     marginVertical: 4,
+    fontWeight: '500',
   },
   finishContainer: {
     position: 'absolute',
@@ -364,7 +447,6 @@ const styles = StyleSheet.create({
     right: 20,
     zIndex: 10,
   },
- 
   startButtonText: {
     color: '#fff',
     fontSize: 24,
@@ -372,28 +454,38 @@ const styles = StyleSheet.create({
   },
   idleContainer: {
     alignItems: 'center',
+    marginTop: 30,
   },
   label: {
     fontSize: 18,
     marginBottom: 10,
+    fontWeight: '500',
   },
   optionsContainer: {
     flexDirection: 'row',
     marginBottom: 20,
   },
   optionButton: {
-    paddingVertical: 10,
-    paddingHorizontal: 20,
-    backgroundColor: '#eee',
-    borderRadius: 5,
-    marginHorizontal: 5,
+    paddingVertical: 12,
+    paddingHorizontal: 24,
+    backgroundColor: '#f1f3f5',
+    borderRadius: 8,
+    marginHorizontal: 8,
+    borderWidth: 2,
+    borderColor: '#f1f3f5',
   },
   optionButtonSelected: {
-    backgroundColor: '#007AFF',
+    backgroundColor: '#e7f5ff',
+    borderColor: '#007AFF',
   },
   optionText: {
     fontSize: 16,
-    color: '#333',
+    color: '#555',
+    fontWeight: '500',
+  },
+  optionTextSelected: {
+    color: '#007AFF',
+    fontWeight: 'bold',
   },
   startButton: {
     backgroundColor: '#007AFF',
@@ -401,5 +493,12 @@ const styles = StyleSheet.create({
     paddingHorizontal: 40,
     borderRadius: 10,
     elevation: 3,
+    shadowColor: "#000",
+    shadowOffset: {
+      width: 0,
+      height: 2,
+    },
+    shadowOpacity: 0.1,
+    shadowRadius: 3.84,
   },
 });
