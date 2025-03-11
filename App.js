@@ -257,7 +257,7 @@ export default function App() {
     labels: sessionData.map(session => new Date(session.timestamp).toLocaleDateString()),
     datasets: [
       {
-        data: sessionData.map(session => session.averageRetention / 60) // Konvertieren zu Minuten
+        data: sessionData.map(session => session.averageRetention) // Konvertieren zu Minuten
       }
     ]
   };
@@ -271,44 +271,63 @@ export default function App() {
           <View style={styles.chartContainer}>
             <Text style={styles.chartTitle}>Durchschnittliche Retentionszeit</Text>
             {sessionData.length > 0 ? (
-  <BarChart
-    data={chartData}
-    width={Dimensions.get('window').width - 30}
-    height={220}
-    yAxisLabel=""
-    yAxisSuffix=" s"
-    fromZero={true}         // Y-Achse beginnt immer bei 0
-    withInnerLines={true}   // Horizontale Linien anzeigen für bessere Lesbarkeit
-    segments={5}            // Anzahl der horizontalen Abschnitte
-    chartConfig={{
-      backgroundColor: "#f5f5f5",
-      backgroundGradientFrom: "#f5f5f5",
-      backgroundGradientTo: "#f5f5f5",
-      decimalPlaces: 0,     // Keine Dezimalstellen
-      color: (opacity = 1) => `rgba(0, 122, 255, ${opacity})`,
-      labelColor: (opacity = 1) => `rgba(0, 0, 0, ${opacity})`,
-      fillShadowGradient: '#007AFF',
-      fillShadowGradientOpacity: 0.8,
-      barPercentage: 0.7,
-      propsForVerticalLabels: {
-        fontSize: 10,
-        rotation: 0
-      },
-      propsForHorizontalLabels: {
-        fontSize: 10
-      },
-      // Keine formatYLabel-Funktion, damit die Standardbeschriftung verwendet wird
-    }}
-    style={{
-      marginVertical: 8,
-      borderRadius: 16,
-      padding: 10
-      // Schatten-Eigenschaften wurden entfernt
-    }}
-  />
-) : (
-  <Text style={styles.noDataText}>Keine Sessions verfügbar</Text>
-)}
+              <>
+                <BarChart
+                  data={chartData}
+                  width={Dimensions.get('window').width - 30}
+                  height={220}
+                  yAxisLabel=""
+                  yAxisSuffix=" s"
+                  fromZero={true}
+                  withInnerLines={true}
+                  segments={4}
+                  chartConfig={{
+                    backgroundColor: "#f5f5f5",
+                    backgroundGradientFrom: "#f5f5f5",
+                    backgroundGradientTo: "#f5f5f5",
+                    decimalPlaces: 0,
+                    color: (opacity = 1) => `rgba(0, 122, 255, ${opacity})`,
+                    labelColor: (opacity = 1) => `rgba(0, 0, 0, ${opacity})`,
+                    fillShadowGradient: '#007AFF',
+                    fillShadowGradientOpacity: 0.8,
+                    barPercentage: 0.7,
+                    propsForVerticalLabels: {
+                      fontSize: 10,
+                      rotation: 0
+                    },
+                    propsForHorizontalLabels: {
+                      fontSize: 10
+                    },
+                    formatYLabel: (value) => {
+                      const roundedValue = Math.ceil(value / 25) * 25;
+                      return roundedValue.toString();
+                    }
+                  }}
+                  style={{
+                    marginVertical: 8,
+                    borderRadius: 16,
+                    padding: 10
+                  }}
+                />
+                <View style={styles.statsContainer}>
+                  <View style={styles.statItem}>
+                    <Text style={styles.statLabel}>Total Retention Time</Text>
+                    <Text style={styles.statValue}>
+                      {formatTime(sessionData.reduce((total, session) => 
+                        total + session.rounds.reduce((sum, time) => sum + time, 0), 0))}
+                    </Text>
+                  </View>
+                  <View style={styles.statItem}>
+                    <Text style={styles.statLabel}>Total Breathing Cycles</Text>
+                    <Text style={styles.statValue}>
+                      {sessionData.reduce((total, session) => total + session.rounds.length, 0)}
+                    </Text>
+                  </View>
+                </View>
+              </>
+            ) : (
+              <Text style={styles.noDataText}>Keine Sessions verfügbar</Text>
+            )}
           </View>
         )}
 
@@ -500,5 +519,30 @@ const styles = StyleSheet.create({
     },
     shadowOpacity: 0.1,
     shadowRadius: 3.84,
+  },
+  statsContainer: {
+    width: '100%',
+    flexDirection: 'row',
+    justifyContent: 'space-around',
+    marginTop: 20,
+    paddingHorizontal: 10,
+  },
+  statItem: {
+    alignItems: 'center',
+    backgroundColor: '#f8f9fa',
+    padding: 15,
+    borderRadius: 10,
+    width: '45%',
+  },
+  statLabel: {
+    fontSize: 14,
+    color: '#666',
+    marginBottom: 5,
+    textAlign: 'center',
+  },
+  statValue: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    color: '#007AFF',
   },
 });
